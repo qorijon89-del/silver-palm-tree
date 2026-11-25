@@ -1,7 +1,7 @@
-name: Android Builder 0.3 private integration
+name: Android Builder main project
 on:
   push:
-    branches: [builder-v03-private]
+    branches: [builder-main-project]
 permissions:
   contents: read
 jobs:
@@ -17,15 +17,15 @@ jobs:
           java-version: '17'
       - name: Prepare SDK
         run: |
-          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
             SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
             test -n "$SDKMANAGER"
-            "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+            "$SDKMANAGER" 'platforms;android-36' 'build-tools;35.0.0'
           fi
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-      - run: gradle --no-daemon :app:assembleDebug :app:bundleDebug
+          gradle-version: '8.11.1'
+      - run: gradle --no-daemon :app:assembleDebug :app:assembleRelease :app:bundleRelease
       - name: Verify Builder and embedded template
         run: |
           set -euo pipefail
@@ -41,7 +41,7 @@ jobs:
           unzip -p /tmp/viewer-template.apk assets/site/index.html | grep -F 'Барномаи HTML'
           test "$(zipinfo -1 /tmp/viewer-template.apk | grep -Ec '^res/.+[.]png$')" -eq 1
           mkdir -p deliverables
-          cp "$apk" deliverables/Android-Builder-0.3.apk
+          cp "$apk" deliverables/Android-Builder-internal.apk
       - name: Smoke-test generated APK format
         run: |
           set -euo pipefail
@@ -105,9 +105,41 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify /tmp/builder-service-check.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions /tmp/builder-service-check.apk | grep 'android.permission.RECORD_AUDIO'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions /tmp/builder-service-check.apk | grep 'android.permission.INTERNET'
+      - name: Verify two project versions keep the same ID and signing certificate
+        run: |
+          set -euo pipefail
+          java_dir=app/src/main/java/tj/builder/v1
+          javac -d /tmp/identity "$java_dir/ManifestIdentity.java" scripts/PatchManifestFixture.java
+          unzip -p /tmp/viewer-template.apk AndroidManifest.xml > /tmp/identity-original.xml
+          export BUILDER_SIGNING_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(42))')"
+          keytool -genkeypair -keyalg RSA -keysize 2048 -alias androidbuilder -keystore /tmp/identity-test.p12 -storetype PKCS12 -storepass:env BUILDER_SIGNING_PASSWORD -dname CN=CI-ONLY -validity 1
+          export APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          fp="$(keytool -exportcert -alias androidbuilder -keystore /tmp/identity-test.p12 -storepass:env BUILDER_SIGNING_PASSWORD | sha256sum | cut -d' ' -f1)"
+          for v in 1 2; do
+            java -cp /tmp/identity PatchManifestFixture /tmp/identity-original.xml "/tmp/identity-$v.xml" "1.$v" "$v"
+            V="$v" python3 - <<'PYCODE'
+          from zipfile import ZipFile
+          from pathlib import Path
+          import os
+          v=os.environ['V']
+          with ZipFile('/tmp/viewer-template.apk') as old, ZipFile(f'/tmp/identity-{v}-unsigned.apk','w') as new:
+            for e in old.infolist():
+              b=Path(f'/tmp/identity-{v}.xml').read_bytes() if e.filename=='AndroidManifest.xml' else old.read(e)
+              new.writestr(e.filename,b,e.compress_type)
+          PYCODE
+            bash scripts/sign_builder_release.sh "/tmp/identity-$v-unsigned.apk" "/tmp/identity-$v.apk" /tmp/identity-test.p12 "$fp"
+            dump="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "/tmp/identity-$v.apk")"
+            grep -F "package: name='com.bayram.pogoda' versionCode='$v' versionName='1.$v'" <<<"$dump"
+            grep -F "application-label:'Обу ҳаво'" <<<"$dump"
+            grep -F "sdkVersion:'24'" <<<"$dump"
+            grep -F "targetSdkVersion:'36'" <<<"$dump"
+          done
+          rm /tmp/identity-test.p12
+          cp app/build/outputs/apk/release/app-release-unsigned.apk deliverables/Android-Builder-release-unsigned.apk
+          cp app/build/outputs/bundle/release/app-release.aab deliverables/Android-Builder-release-unsigned.aab
       - uses: actions/upload-artifact@v4
         with:
-          name: Android-Builder-03-private-test
+          name: Android-Builder-main-unsigned
           path: deliverables/*
           if-no-files-found: error
 

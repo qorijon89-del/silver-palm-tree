@@ -22,10 +22,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.zip.*;
 
 public final class MainActivity extends Activity {
-  private static final int SOURCE=10, ICON=11, SAVE=12, NATIVE=13, LIMIT=40*1024*1024;
-  private static final String ALIAS="html_builder_preview";
+  private static final int SOURCE=10, ICON=11, SAVE=12, NATIVE=13, WIZARD_ICON=15, LIMIT=40*1024*1024;
+
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private Uri source, icon;
+  private ProjectBook book;
+  private ProjectBook.Item active;
+  private ProjectWizard wizard;
+  private TextView activeLabel;
   private String sourceName, iconName;
   private TextView selected, iconText, status;
   private ImageView preview;
@@ -39,6 +43,7 @@ public final class MainActivity extends Activity {
   private boolean busy;
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
+    book=new ProjectBook(this);
     ScrollView scroll=new ScrollView(this);
     LinearLayout box=new LinearLayout(this);
     box.setOrientation(LinearLayout.VERTICAL);
@@ -50,8 +55,13 @@ public final class MainActivity extends Activity {
       return insets;
     });
     scroll.addView(box);
-    TextView title=label(box,"Android Builder · Санҷиши 0.3"); title.setTextSize(25); title.setAccessibilityHeading(true);
-    label(box,"Дар ин санҷиш HTML ё ZIP-и HTML-ро ба APK табдил диҳед. Файл ба сервер фиристода намешавад.");
+    TextView title=label(box,"Android Builder"); title.setTextSize(25); title.setAccessibilityHeading(true);
+    BuilderLocale.apply(this,box);
+    button(box,t("Лоиҳаи нав","Новый проект","New project","پروژه جدید"),()->projectWizard(null));
+    button(box,t("Лоиҳаҳои ман","Мои проекты","My projects","پروژه‌های من"),this::selectProject);
+    button(box,t("Танзими забон","Язык приложения","App language","زبان برنامه"),()->{if(!busy)BuilderLocale.pick(this,false);});
+    activeLabel=label(box,t("Лоиҳа интихоб нашудааст","Проект не выбран","No project selected","پروژه‌ای انتخاب نشده"));
+    label(box,t("HTML ё ZIP-и HTML: сохтани APK дар телефон.","HTML или ZIP HTML: сборка APK на телефоне.","HTML or HTML ZIP: build an APK on the phone.","HTML یا زیپ HTML: ساخت APK در گوشی."));
     button(box,"Интихоби HTML ё ZIP",()->pick(SOURCE,"*/*"));
     selected=label(box,"Файл интихоб нашудааст");
     button(box,"Интихоби нишона (ихтиёрӣ)",()->pick(ICON,"image/*"));
@@ -90,18 +100,49 @@ public final class MainActivity extends Activity {
     aiRequest.setSingleLine(false);aiRequest.setMinLines(3);
     button(box,"Бо AI сохтани лоиҳаи HTML",this::startAi);
     label(box,"AI барои лоиҳаи HTML аст ва ба хадамоти хусусӣ ниёз дорад. Пеш аз фиристодани матн тасдиқ мепурсад.");
-    label(box,"APK-ҳои ин озмоиш як номи бастаи Android доранд. Барои лоиҳаҳои алоҳида ҳоло истифода набаред.");
+
     setContentView(scroll);
     if(state!=null) {
+      String pid=state.getString("activeProject");if(pid!=null)active=book.get(pid);
+      nativeFormat=state.getString("nativeFormat");
       String s=state.getString("source"), i=state.getString("icon");
       source=s==null?null:Uri.parse(s); icon=i==null?null:Uri.parse(i);
       sourceName=state.getString("sourceName");iconName=state.getString("iconName");
       allowInternet.setChecked(state.getBoolean("internet"));
     }
-    showSelections();
+    showSelections();showActive();
+    if(!BuilderLocale.chosen(this))BuilderLocale.pick(this,true);
+  }
+  String t(String tg,String ru,String en,String fa){return BuilderLocale.t(this,tg,ru,en,fa);}
+  private void projectWizard(ProjectBook.Item old){
+    if(busy)return;
+    wizard=new ProjectWizard(this,book,old,()->pick(WIZARD_ICON,"image/*"));
+    wizard.show();
+  }
+  private void selectProject(){
+    if(busy)return;
+    List<ProjectBook.Item> projects=book.all();
+    if(projects.isEmpty()){status.setText(t("Ҳоло лоиҳа нест","Проектов пока нет","No projects yet","هنوز پروژه‌ای وجود ندارد"));return;}
+    String[] names=new String[projects.size()];
+    for(int n=0;n<names.length;n++){ProjectBook.Item i=projects.get(n);names[n]=i.title+" · "+i.id;}
+    new android.app.AlertDialog.Builder(this).setTitle(t("Лоиҳаҳои ман","Мои проекты","My projects","پروژه‌های من"))
+        .setItems(names,(d,n)->projectWizard(projects.get(n))).show();
+  }
+  void useProject(ProjectBook.Item p){
+    active=p;source=null;sourceName=null;nativeFile=null;
+    icon=p.icon.isEmpty()?null:Uri.parse(p.icon);iconName=icon==null?null:filename(icon);
+    allowInternet.setChecked(p.permissions.contains("INTERNET"));
+    for(Map.Entry<String,CheckBox> x:nativePerms.entrySet())x.getValue().setChecked(p.permissions.contains(x.getKey()));
+    showSelections();showActive();
+    pick(p.kind.equals("html")?SOURCE:NATIVE,"*/*");
+  }
+  private void showActive(){
+    if(active!=null)activeLabel.setText(active.title+" · "+active.id+" · "+active.version);
   }
   @Override protected void onSaveInstanceState(Bundle b) {
     super.onSaveInstanceState(b);
+    if(active!=null)b.putString("activeProject",active.id);
+    b.putString("nativeFormat",nativeFormat);
     if(source!=null)b.putString("source",source.toString());if(icon!=null)b.putString("icon",icon.toString());
     b.putBoolean("internet",allowInternet.isChecked());
     b.putString("sourceName",sourceName);b.putString("iconName",iconName);
@@ -126,7 +167,7 @@ public final class MainActivity extends Activity {
     Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType(mime).addCategory(Intent.CATEGORY_OPENABLE);
     startActivityForResult(i,id);
   }
-  private File output() {return new File(getFilesDir(),"HTML-test.apk");}
+  private File output() {return new File(getFilesDir(),active==null?"HTML-result.apk":active.id+".apk");}
   private void showSelections() {
     selected.setText(sourceName==null?"Файл интихоб нашудааст":"Файл: "+sourceName);
     iconText.setText(iconName==null?"Нишонаи пешфарз":"Нишона: "+iconName);
@@ -161,6 +202,7 @@ public final class MainActivity extends Activity {
       return;
     }
     try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}
+    if(request==WIZARD_ICON){if(wizard!=null)wizard.setIcon(u,filename(u));return;}
     if(request==NATIVE){inspectNative(u);return;}
     if(request==SOURCE){source=u;sourceName=filename(u); reviewHtml(u,sourceName);}
     if(request==ICON){icon=u;iconName=filename(u);}
@@ -313,16 +355,29 @@ public final class MainActivity extends Activity {
   private void saveDialog() {
     if(!output().isFile()||busy)return;
     Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-        .setType("application/vnd.android.package-archive").putExtra(Intent.EXTRA_TITLE,"HTML-test.apk");
+        .setType("application/vnd.android.package-archive").putExtra(Intent.EXTRA_TITLE,active==null?"HTML-result.apk":active.id+"-"+active.version+".apk");
     startActivityForResult(i,SAVE);
   }
   private void startBuild() {
     if(source==null||busy)return;
+    final ProjectBook.Item p=active;
+    if(p==null||!p.kind.equals("html")){
+      status.setText(t("Аввал лоиҳаи HTML созед ё кушоед.","Сначала откройте или создайте проект HTML.","Create or open an HTML project first.","ابتدا یک پروژه HTML بسازید یا باز کنید."));return;
+    }
+    if(p.format.equals("aab")){
+      status.setText(t("AAB барои HTML ҳанӯз дастрас нест.","AAB из HTML пока недоступен.","HTML to AAB is not available yet.","تبدیل HTML به AAB هنوز در دسترس نیست."));return;
+    }
     final Uri file=source, image=icon; final String name=sourceName; final boolean internet=allowInternet.isChecked();
     busy=true;showSelections();status.setText("APK сохта истодааст");
     worker.execute(()->{
       String message;
-      try {makeApk(file,name,image,internet);message="APK тайёр аст. «Захира кардани APK»-ро пахш кунед.";}
+      try {
+        ProjectBook.Item done=p.built();
+        makeApk(file,name,image,internet,done);
+        if(!book.store(done))throw new UserError("Версияи лоиҳа захира нашуд.");
+        runOnUiThread(()->{active=done;showActive();});
+        message="APK тайёр аст. «Захира кардани APK»-ро пахш кунед.";
+      }
       catch(Exception e){android.util.Log.w("Builder","APK build failed",e);
         message=e instanceof UserError ? e.getMessage() : "APK сохта нашуд. Файлҳо ва ҷойи холии телефонро санҷед.";}
       finishWork(message);
@@ -361,7 +416,7 @@ public final class MainActivity extends Activity {
       return Bitmap.createScaledBitmap(Bitmap.createBitmap(b,(b.getWidth()-s)/2,(b.getHeight()-s)/2,s,s),192,192,true);
     }
   }
-  private void makeApk(Uri file,String name,Uri image,boolean internet)throws Exception {
+  private void makeApk(Uri file,String name,Uri image,boolean internet,ProjectBook.Item project)throws Exception {
     String lower=name==null?"":name.toLowerCase(Locale.ROOT);
     if(!(lower.endsWith(".html")||lower.endsWith(".htm")||lower.endsWith(".zip")))
       throw new UserError("Файли HTML ё ZIP-и HTML интихоб кунед.");
@@ -382,7 +437,9 @@ public final class MainActivity extends Activity {
           } else {
             ByteArrayOutputStream buf=new ByteArrayOutputStream();
             try(InputStream in=template.getInputStream(e)){pipe(in,buf,LIMIT);}
-            entry(z,path,buf.toByteArray(),e.getMethod()==ZipEntry.STORED);
+            byte[] content=buf.toByteArray();
+            if(path.equals("AndroidManifest.xml"))content=ManifestIdentity.change(content,project.id,project.title,project.version,project.last);
+            entry(z,path,content,e.getMethod()==ZipEntry.STORED);
           }
         }
         if(newIcon!=null&&!replaced)throw new UserError("Нишона иваз нашуд. Бо нишонаи пешфарз санҷед.");
@@ -411,20 +468,22 @@ public final class MainActivity extends Activity {
           z.closeEntry();
         }
       }
+      final String alias="html_signing_"+project.id;
       KeyStore keys=KeyStore.getInstance("AndroidKeyStore");keys.load(null);
-      if(!keys.containsAlias(ALIAS)){
+      if(!keys.containsAlias(alias)&&project.last>1)throw new UserError("Калиди ин лоиҳа ёфт нашуд. Ба ҷойи он калиди нав сохта нашуд.");
+      if(!keys.containsAlias(alias)){
         KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA,"AndroidKeyStore");
-        gen.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
+        gen.initialize(new KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
             .setKeySize(2048).setDigests(KeyProperties.DIGEST_SHA256,KeyProperties.DIGEST_SHA512)
             .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,KeyProperties.SIGNATURE_PADDING_RSA_PSS).build());
         gen.generateKeyPair();
       }
       ApkSigner.SignerConfig cfg=new ApkSigner.SignerConfig.Builder("BUILDER",
-          (PrivateKey)keys.getKey(ALIAS,null),Collections.singletonList((X509Certificate)keys.getCertificate(ALIAS))).build();
+          (PrivateKey)keys.getKey(alias,null),Collections.singletonList((X509Certificate)keys.getCertificate(alias))).build();
       new ApkSigner.Builder(Collections.singletonList(cfg)).setInputApk(unsigned).setOutputApk(signed)
-          .setMinSdkVersion(28).setV1SigningEnabled(false).setV2SigningEnabled(true)
+          .setMinSdkVersion(24).setV1SigningEnabled(false).setV2SigningEnabled(true)
           .setV3SigningEnabled(false).setV4SigningEnabled(false).build().sign();
-      if(!new ApkVerifier.Builder(signed).setMinCheckedPlatformVersion(28).build().verify().isVerified())
+      if(!new ApkVerifier.Builder(signed).setMinCheckedPlatformVersion(24).build().verify().isVerified())
         throw new UserError("Имзои APK дуруст нест. Файл захира нашуд.");
       android.system.Os.rename(signed.getAbsolutePath(),output().getAbsolutePath());
     } finally {base.delete();unsigned.delete();signed.delete();}

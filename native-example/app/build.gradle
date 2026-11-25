@@ -1,6 +1,6 @@
-plugins { id 'com.android.application' version '8.7.3' }
+plugins { id 'com.android.application' version '8.10.1' }
 android {
   namespace 'tj.builder.nativeexample'
-  compileSdk 35
-  defaultConfig { applicationId 'tj.builder.nativeexample'; minSdk 28; targetSdk 34; versionCode 1; versionName '1.0' }
+  compileSdk 36
+  defaultConfig { applicationId 'tj.builder.nativeexample'; minSdk 28; targetSdk 36; versionCode 1; versionName '1.0' }
 }

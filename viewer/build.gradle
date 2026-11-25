@@ -1,8 +1,8 @@
-plugins { id 'com.android.application' version '8.7.3' }
+plugins { id 'com.android.application' version '8.10.1' }
 android {
     namespace 'tj.builder.html'
-    compileSdk 35
-    defaultConfig { applicationId 'tj.builder.htmlv2'; minSdk 28; targetSdk 35; versionCode 1; versionName '0.1' }
+    compileSdk 36
+    defaultConfig { applicationId 'tj.builder.htmlv2'; minSdk 24; targetSdk 36; versionCode 1; versionName '0.1' }
     flavorDimensions += "network"
     productFlavors {
         offline { dimension "network" }

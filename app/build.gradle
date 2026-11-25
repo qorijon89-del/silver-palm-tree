@@ -1,12 +1,12 @@
-plugins { id 'com.android.application' version '8.7.3' }
+plugins { id 'com.android.application' version '8.10.1' }
 android {
     namespace 'tj.builder.v1'
-    compileSdk 35
-    defaultConfig { applicationId 'tj.builder.v3'; minSdk 28; targetSdk 35; versionCode 3; versionName '0.3' }
+    compileSdk 36
+    defaultConfig { applicationId 'tj.builder.app'; minSdk 28; targetSdk 36; versionCode 1; versionName '1.0' }
     sourceSets { main.assets.srcDir layout.buildDirectory.dir('generated/viewerAsset') }
     packaging.resources.excludes += ['/META-INF/DEPENDENCIES', '/META-INF/LICENSE*', '/META-INF/NOTICE*']
 }
-dependencies { implementation 'com.android.tools.build:apksig:8.7.3' }
+dependencies { implementation 'com.android.tools.build:apksig:8.10.1' }
 tasks.register('stageViewer', Copy) {
     dependsOn ':viewer:assembleOfflineRelease', ':viewer:assembleOnlineRelease'
     from(project(':viewer').layout.buildDirectory.file('outputs/apk/offline/release/viewer-offline-release-unsigned.apk')) { rename { 'viewer.apk' } }
