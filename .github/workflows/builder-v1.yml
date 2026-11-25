@@ -1,7 +1,7 @@
-name: Android Builder 0.2 integration
+name: Android Builder 0.3 private integration
 on:
   push:
-    branches: [builder-v02]
+    branches: [builder-v03-private]
 permissions:
   contents: read
 jobs:
@@ -41,7 +41,7 @@ jobs:
           unzip -p /tmp/viewer-template.apk assets/site/index.html | grep -F 'Барномаи HTML'
           test "$(zipinfo -1 /tmp/viewer-template.apk | grep -Ec '^res/.+[.]png$')" -eq 1
           mkdir -p deliverables
-          cp "$apk" deliverables/Android-Builder-0.2.apk
+          cp "$apk" deliverables/Android-Builder-0.3.apk
       - name: Smoke-test generated APK format
         run: |
           set -euo pipefail
@@ -81,9 +81,33 @@ jobs:
           unzip -t /tmp/native-output/app-debug.aab
           cp /tmp/native-output/app-debug.apk deliverables/Android-Loiha-Sanjish.apk
           cp /tmp/native-output/app-debug.aab deliverables/Android-Loiha-Sanjish.aab
+      - name: Exercise request, permission changes, build, and download over HTTP
+        run: |
+          set -euo pipefail
+          export GRADLE_BIN="$(command -v gradle)"
+          cat > /tmp/ci-build-worker <<'SH'
+          #!/bin/bash
+          set -euo pipefail
+          sudo unshare --net -- bash -c '
+            set -e
+            ip link set lo up
+            if ip route | grep -q .; then exit 1; fi
+            exec setpriv --reuid "$1" --regid "$2" --init-groups -- env "HOME=$3" "PATH=$4" "JAVA_HOME=$5" "ANDROID_HOME=$6" "GRADLE_USER_HOME=$7" python3 scripts/build_native_zip.py "$9" "${10}" --format "${11}" --permissions "${12}" --trusted-project --gradle "$8"
+          ' _ "$(id -un)" "$(id -gn)" "$HOME" "$PATH" "$JAVA_HOME" "$ANDROID_HOME" "${GRADLE_USER_HOME:-$HOME/.gradle}" "$GRADLE_BIN" "$1" "$2" "$3" "$4"
+          SH
+          chmod 700 /tmp/ci-build-worker
+          BUILDER_AUTH_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')"
+          export BUILDER_AUTH_TOKEN
+          python3 scripts/private_build_service.py --runner /tmp/ci-build-worker &
+          srv=$!
+          trap 'kill "$srv" || true' EXIT
+          python3 scripts/smoke_service.py http://127.0.0.1:8077 deliverables/Android-Loiha-Sanjish.zip
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify /tmp/builder-service-check.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions /tmp/builder-service-check.apk | grep 'android.permission.RECORD_AUDIO'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions /tmp/builder-service-check.apk | grep 'android.permission.INTERNET'
       - uses: actions/upload-artifact@v4
         with:
-          name: Android-Builder-02-and-native-test
+          name: Android-Builder-03-private-test
           path: deliverables/*
           if-no-files-found: error
 
