@@ -28,7 +28,8 @@ public final class ViewerActivity extends Activity {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
         web.getSettings().setAllowContentAccess(false);
-        web.getSettings().setBlockNetworkLoads(true);
+        final boolean network = checkSelfPermission(android.Manifest.permission.INTERNET)==android.content.pm.PackageManager.PERMISSION_GRANTED;
+        web.getSettings().setBlockNetworkLoads(!network);
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 return assetPath(req.getUrl()) == null;
@@ -45,6 +46,8 @@ public final class ViewerActivity extends Activity {
                         mime != null && (mime.startsWith("text/") || mime.contains("json")) ? "UTF-8":null,
                         getAssets().open("site/"+p));
                 } catch (IOException ignored) {}
+                if (p==null && network && "https".equals(req.getUrl().getScheme()) &&
+                    !HOST.equals(req.getUrl().getHost())) return null;
                 return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",null,new ByteArrayInputStream(new byte[0]));
             }
         });

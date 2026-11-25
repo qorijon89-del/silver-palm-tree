@@ -1,7 +1,7 @@
-name: Android Builder V1 preview
+name: Android Builder 0.2 integration
 on:
   push:
-    branches: [builder-v1-preview]
+    branches: [builder-v02]
 permissions:
   contents: read
 jobs:
@@ -32,11 +32,16 @@ jobs:
           apk=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           unzip -p "$apk" assets/viewer.apk > /tmp/viewer-template.apk
+          unzip -p "$apk" assets/viewer-online.apk > /tmp/viewer-online.apk
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          if "$aapt" dump permissions /tmp/viewer-template.apk | grep -q 'android.permission.INTERNET'; then exit 1; fi
+          "$aapt" dump permissions /tmp/viewer-online.apk | grep 'android.permission.INTERNET'
+          "$aapt" dump badging /tmp/viewer-online.apk | grep 'tj.builder.htmlv2' 
           zipinfo -1 /tmp/viewer-template.apk
           unzip -p /tmp/viewer-template.apk assets/site/index.html | grep -F 'Барномаи HTML'
           test "$(zipinfo -1 /tmp/viewer-template.apk | grep -Ec '^res/.+[.]png$')" -eq 1
           mkdir -p deliverables
-          cp "$apk" deliverables/Android-Builder-0.1.apk
+          cp "$apk" deliverables/Android-Builder-0.2.apk
       - name: Smoke-test generated APK format
         run: |
           set -euo pipefail
@@ -54,8 +59,31 @@ jobs:
           "$tools/apksigner" verify /tmp/test-output.apk
           unzip -p /tmp/test-output.apk assets/site/index.html | grep -F 'Real HTML export'
           "$tools/zipalign" -c 4 /tmp/test-output.apk
+      - name: Convert a native Android ZIP to APK and AAB
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          from zipfile import ZipFile,ZIP_DEFLATED
+          from pathlib import Path
+          p=Path('native-example')
+          with ZipFile('deliverables/Android-Loiha-Sanjish.zip','w',ZIP_DEFLATED) as z:
+            for f in sorted(p.rglob('*')):
+              if f.is_file(): z.write(f, f.relative_to(p))
+          PYCODE
+          gradle_bin="$(command -v gradle)"
+          sudo unshare --net -- bash -c '
+            set -e
+            ip link set lo up
+            if ip route | grep -q .; then exit 1; fi
+            exec setpriv --reuid "$1" --regid "$2" --init-groups -- env "HOME=$3" "PATH=$4" "JAVA_HOME=$5" "ANDROID_HOME=$6" "GRADLE_USER_HOME=$7" python3 scripts/build_native_zip.py deliverables/Android-Loiha-Sanjish.zip /tmp/native-output --gradle "$8" --trusted-project
+          ' _ "$(id -un)" "$(id -gn)" "$HOME" "$PATH" "$JAVA_HOME" "$ANDROID_HOME" "${GRADLE_USER_HOME:-$HOME/.gradle}" "$gradle_bin"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose /tmp/native-output/app-debug.apk
+          unzip -t /tmp/native-output/app-debug.aab
+          cp /tmp/native-output/app-debug.apk deliverables/Android-Loiha-Sanjish.apk
+          cp /tmp/native-output/app-debug.aab deliverables/Android-Loiha-Sanjish.aab
       - uses: actions/upload-artifact@v4
         with:
-          name: Android-Builder-preview
-          path: deliverables/Android-Builder-0.1.apk
+          name: Android-Builder-02-and-native-test
+          path: deliverables/*
           if-no-files-found: error
+

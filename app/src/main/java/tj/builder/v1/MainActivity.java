@@ -22,7 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.zip.*;
 
 public final class MainActivity extends Activity {
-  private static final int SOURCE=10, ICON=11, SAVE=12, LIMIT=40*1024*1024;
+  private static final int SOURCE=10, ICON=11, SAVE=12, NATIVE=13, LIMIT=40*1024*1024;
   private static final String ALIAS="html_builder_preview";
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private Uri source, icon;
@@ -30,6 +30,7 @@ public final class MainActivity extends Activity {
   private TextView selected, iconText, status;
   private ImageView preview;
   private Button build, save;
+  private CheckBox allowInternet;
   private boolean busy;
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
@@ -44,7 +45,7 @@ public final class MainActivity extends Activity {
       return insets;
     });
     scroll.addView(box);
-    TextView title=label(box,"Android Builder · Санҷиши 0.1"); title.setTextSize(25); title.setAccessibilityHeading(true);
+    TextView title=label(box,"Android Builder · Санҷиши 0.2"); title.setTextSize(25); title.setAccessibilityHeading(true);
     label(box,"Дар ин санҷиш HTML ё ZIP-и HTML-ро ба APK табдил диҳед. Файл ба сервер фиристода намешавад.");
     button(box,"Интихоби HTML ё ZIP",()->pick(SOURCE,"*/*"));
     selected=label(box,"Файл интихоб нашудааст");
@@ -53,22 +54,30 @@ public final class MainActivity extends Activity {
     iconText=label(box,"Нишонаи пешфарз");
     preview=new ImageView(this); preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     box.addView(preview,new LinearLayout.LayoutParams(p*4,p*4)); preview.setVisibility(View.GONE);
+    allowInternet=new CheckBox(this);
+    allowInternet.setText("Ба барномаи тайёри HTML интернет иҷозат дода шавад");
+    box.addView(allowInternet);
+    label(box,"Барои аудио ё дигар муҳтавои онлайн фаъол кунед. Танҳо пайвандҳои HTTPS дастгирӣ мешаванд.");
     build=button(box,"Сохтани APK",this::startBuild);
     save=button(box,"Захира кардани APK",this::saveDialog);
     status=label(box,"Омода барои оғоз");
     status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+    button(box,"Санҷиши ZIP-и лоиҳаи Android",()->pick(NATIVE,"*/*"));
+    label(box,"Дар ин нусха ZIP-и Android дар телефон санҷида мешавад. Барои сохтани APK ё AAB ҳанӯз хадамоти ҷудогона лозим аст.");
     label(box,"APK-ҳои ин озмоиш як номи бастаи Android доранд. Барои лоиҳаҳои алоҳида ҳоло истифода набаред.");
     setContentView(scroll);
     if(state!=null) {
       String s=state.getString("source"), i=state.getString("icon");
       source=s==null?null:Uri.parse(s); icon=i==null?null:Uri.parse(i);
       sourceName=state.getString("sourceName");iconName=state.getString("iconName");
+      allowInternet.setChecked(state.getBoolean("internet"));
     }
     showSelections();
   }
   @Override protected void onSaveInstanceState(Bundle b) {
     super.onSaveInstanceState(b);
     if(source!=null)b.putString("source",source.toString());if(icon!=null)b.putString("icon",icon.toString());
+    b.putBoolean("internet",allowInternet.isChecked());
     b.putString("sourceName",sourceName);b.putString("iconName",iconName);
   }
   private TextView label(LinearLayout box,String text) {
@@ -118,9 +127,38 @@ public final class MainActivity extends Activity {
       return;
     }
     try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}
+    if(request==NATIVE){inspectNative(u);return;}
     if(request==SOURCE){source=u;sourceName=filename(u);}
     if(request==ICON){icon=u;iconName=filename(u);}
     showSelections();
+  }
+  private void inspectNative(Uri file) {
+    if(busy)return;
+    busy=true;showSelections();status.setText("ZIP-и Android санҷида мешавад");
+    worker.execute(()->{
+      String result;
+      try(ZipInputStream z=new ZipInputStream(open(file))) {
+        Set<String> entries=new HashSet<>();
+        ArrayList<String> settings=new ArrayList<>();
+        OutputStream discard=new OutputStream(){@Override public void write(int b){} @Override public void write(byte[] b,int o,int n){}};
+        ZipEntry e;long total=0;int count=0;
+        while((e=z.getNextEntry())!=null) {
+          String n=e.getName();
+          if(++count>4000||n.length()>300||n.startsWith("/")||n.contains(":")||n.indexOf(92)>=0||Arrays.asList(n.split("/")).contains("..")||!entries.add(n))throw new UserError("Сохтори ZIP нодуруст аст.");
+          if(n.endsWith("settings.gradle")||n.endsWith("settings.gradle.kts"))settings.add(n);
+          total+=pipe(z,discard,100L*1024*1024-total);z.closeEntry();
+        }
+        int projects=0;
+        for(String n:settings) {
+          int slash=n.lastIndexOf('/');
+          String base=slash<0?"":n.substring(0,slash+1);
+          if(base.indexOf('/')!=base.lastIndexOf('/'))continue;
+          if(entries.contains(base+"app/src/main/AndroidManifest.xml")&&(entries.contains(base+"app/build.gradle")||entries.contains(base+"app/build.gradle.kts")))projects++;
+        }
+        result=projects==1?"ZIP-и лоиҳаи Android дуруст шинохта шуд: "+filename(file)+". Сохтани файл дар телефон ҳанӯз пайваст нест.":"Ин ZIP ҳамчун як лоиҳаи Android бо бахши app шинохта нашуд.";
+      }catch(Exception e) {result=e instanceof UserError?e.getMessage():"ZIP хонда нашуд.";}
+      finishWork(result);
+    });
   }
   private void saveDialog() {
     if(!output().isFile()||busy)return;
@@ -130,11 +168,11 @@ public final class MainActivity extends Activity {
   }
   private void startBuild() {
     if(source==null||busy)return;
-    final Uri file=source, image=icon; final String name=sourceName;
+    final Uri file=source, image=icon; final String name=sourceName; final boolean internet=allowInternet.isChecked();
     busy=true;showSelections();status.setText("APK сохта истодааст");
     worker.execute(()->{
       String message;
-      try {makeApk(file,name,image);message="APK тайёр аст. «Захира кардани APK»-ро пахш кунед.";}
+      try {makeApk(file,name,image,internet);message="APK тайёр аст. «Захира кардани APK»-ро пахш кунед.";}
       catch(Exception e){android.util.Log.w("Builder","APK build failed",e);
         message=e instanceof UserError ? e.getMessage() : "APK сохта нашуд. Файлҳо ва ҷойи холии телефонро санҷед.";}
       finishWork(message);
@@ -173,14 +211,14 @@ public final class MainActivity extends Activity {
       return Bitmap.createScaledBitmap(Bitmap.createBitmap(b,(b.getWidth()-s)/2,(b.getHeight()-s)/2,s,s),192,192,true);
     }
   }
-  private void makeApk(Uri file,String name,Uri image)throws Exception {
+  private void makeApk(Uri file,String name,Uri image,boolean internet)throws Exception {
     String lower=name==null?"":name.toLowerCase(Locale.ROOT);
     if(!(lower.endsWith(".html")||lower.endsWith(".htm")||lower.endsWith(".zip")))
       throw new UserError("Файли HTML ё ZIP-и HTML интихоб кунед.");
     File base=File.createTempFile("base",".apk",getCacheDir()), unsigned=File.createTempFile("unsigned",".apk",getCacheDir());
     File signed=File.createTempFile("signed",".apk",getFilesDir());
     try {
-      try(InputStream in=getAssets().open("viewer.apk");OutputStream out=new FileOutputStream(base)){pipe(in,out,LIMIT);}
+      try(InputStream in=getAssets().open(internet?"viewer-online.apk":"viewer.apk");OutputStream out=new FileOutputStream(base)){pipe(in,out,LIMIT);}
       byte[] newIcon=null;
       if(image!=null){ByteArrayOutputStream bytes=new ByteArrayOutputStream();decodeIcon(image).compress(Bitmap.CompressFormat.PNG,100,bytes);newIcon=bytes.toByteArray();}
       try(ZipFile template=new ZipFile(base);ZipOutputStream z=new ZipOutputStream(new FileOutputStream(unsigned))){
