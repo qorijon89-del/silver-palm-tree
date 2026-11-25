@@ -49,7 +49,8 @@ jobs:
             new.writestr('assets/site/index.html', '<html><h1>Real HTML export</h1></html>')
           PYCODE
           tools="$ANDROID_HOME/build-tools/35.0.0"
-          "$tools/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false --out /tmp/test-output.apk /tmp/test-output-unsigned.apk
+          keytool -genkeypair -keyalg RSA -keysize 2048 -alias test -keystore /tmp/preview-check.p12 -storetype PKCS12 -storepass android -keypass android -dname CN=Preview -validity 1
+          "$tools/apksigner" sign --ks /tmp/preview-check.p12 --ks-key-alias test --ks-pass pass:android --key-pass pass:android --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false --out /tmp/test-output.apk /tmp/test-output-unsigned.apk
           "$tools/apksigner" verify /tmp/test-output.apk
           unzip -p /tmp/test-output.apk assets/site/index.html | grep -F 'Real HTML export'
           "$tools/zipalign" -c 4 /tmp/test-output.apk
