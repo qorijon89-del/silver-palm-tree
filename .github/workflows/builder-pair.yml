@@ -1,0 +1,47 @@
+name: Android Builder matched APK and source
+on:
+  push:
+    branches: [builder-pair-101]
+permissions:
+  contents: read
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Ensure Android 16 SDK
+        run: |
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+            test -n "$SDKMANAGER"
+            "$SDKMANAGER" 'platforms;android-36' 'build-tools;35.0.0'
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - run: gradle --no-daemon :app:assembleDirectDebug
+      - name: Verify signed APK and archive matching source
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/direct/debug/app-direct-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          dump="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")"
+          grep -F "package: name='tj.builder.app.review' versionCode='2'" <<<"$dump"
+          grep -F "targetSdkVersion:'36'" <<<"$dump"
+          mkdir -p pair
+          cp "$apk" pair/Android-Builder-1.0.1.apk
+          git archive --format=zip -o pair/Android-Builder-1.0.1-Source.zip HEAD
+          unzip -t "$apk"
+          unzip -t pair/Android-Builder-1.0.1-Source.zip
+          sha256sum pair/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-Builder-101-pair
+          path: pair/*
+          if-no-files-found: error
