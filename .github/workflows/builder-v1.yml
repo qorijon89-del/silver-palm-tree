@@ -34,9 +34,25 @@ jobs:
           unzip -p "$apk" assets/viewer.apk > /tmp/viewer-template.apk
           zipinfo -1 /tmp/viewer-template.apk
           unzip -p /tmp/viewer-template.apk assets/site/index.html | grep -F 'Барномаи HTML'
-          zipinfo -1 /tmp/viewer-template.apk | grep -E '^res/.+/builder_icon.png$'
+          test "$(zipinfo -1 /tmp/viewer-template.apk | grep -Ec '^res/.+[.]png$')" -eq 1
           mkdir -p deliverables
           cp "$apk" deliverables/Android-Builder-0.1.apk
+      - name: Smoke-test generated APK format
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/viewer-template.apk') as original, ZipFile('/tmp/test-output-unsigned.apk','w') as new:
+            for entry in original.infolist():
+              if not entry.filename.startswith(('META-INF/', 'assets/site/')):
+                new.writestr(entry.filename, original.read(entry), entry.compress_type)
+            new.writestr('assets/site/index.html', '<html><h1>Real HTML export</h1></html>')
+          PYCODE
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false --out /tmp/test-output.apk /tmp/test-output-unsigned.apk
+          "$tools/apksigner" verify /tmp/test-output.apk
+          unzip -p /tmp/test-output.apk assets/site/index.html | grep -F 'Real HTML export'
+          "$tools/zipalign" -c 4 /tmp/test-output.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Android-Builder-preview

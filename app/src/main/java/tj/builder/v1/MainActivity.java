@@ -189,7 +189,7 @@ public final class MainActivity extends Activity {
         while(es.hasMoreElements()){
           ZipEntry e=es.nextElement();String path=e.getName();
           if(e.isDirectory()||path.startsWith("assets/site/")||path.startsWith("META-INF/"))continue;
-          if(newIcon!=null&&path.startsWith("res/")&&path.endsWith("/builder_icon.png")) {
+          if(newIcon!=null&&path.startsWith("res/")&&path.endsWith(".png")) {
             entry(z,path,newIcon,e.getMethod()==ZipEntry.STORED);replaced=true;
           } else {
             ByteArrayOutputStream buf=new ByteArrayOutputStream();
@@ -206,7 +206,9 @@ public final class MainActivity extends Activity {
               if(++count>1000||p.isEmpty()||p.length()>300||p.startsWith("/")||p.contains("\\")||p.contains(":")||
                  Arrays.asList(p.split("/")).contains(".."))
                 throw new UserError("ZIP дорои роҳҳои нодуруст ё файлҳои аз ҳад зиёд аст.");
-              if(!e.isDirectory()){
+              if(e.isDirectory()){
+                if(in.read()!=-1)throw new UserError("Сохтори ZIP нодуруст аст.");
+              } else {
                 if(!names.add(p))throw new UserError("Дар ZIP номи файл такрор шудааст.");
                 z.putNextEntry(new ZipEntry("assets/site/"+p));
                 total+=pipe(in,z,LIMIT-total);z.closeEntry();
