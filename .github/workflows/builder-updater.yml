@@ -1,0 +1,45 @@
+name: Builder update implementation
+on:
+  push:
+    branches: [builder-update-support]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Ensure Android 16 SDK
+        run: |
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+            test -n "$SDKMANAGER"
+            "$SDKMANAGER" 'platforms;android-36' 'build-tools;35.0.0'
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.11.1'}
+      - name: Build direct and Google Play variants
+        run: gradle --no-daemon :app:assembleDirectRelease :app:bundlePlayRelease -PbuilderUpdateFeed=https://example.invalid/updates.json
+      - name: Verify channel separation and release metadata
+        run: |
+          set -euo pipefail
+          export APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          direct=app/build/outputs/apk/direct/release/app-direct-release-unsigned.apk
+          play=app/build/outputs/bundle/playRelease/app-play-release.aab
+          "$aapt" dump permissions "$direct" > /tmp/direct-perms
+          grep -F 'android.permission.REQUEST_INSTALL_PACKAGES' /tmp/direct-perms
+          unzip -p "$play" base/manifest/AndroidManifest.xml > /tmp/play-manifest
+          if grep -aq 'android.permission.REQUEST_INSTALL_PACKAGES' /tmp/play-manifest; then exit 1; fi
+          export BUILDER_SIGNING_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(42))')"
+          keytool -genkeypair -keyalg RSA -keysize 2048 -alias androidbuilder -keystore /tmp/update-check.p12 -storetype PKCS12 -storepass:env BUILDER_SIGNING_PASSWORD -dname CN=CI-ONLY -validity 1
+          fp="$(keytool -exportcert -alias androidbuilder -keystore /tmp/update-check.p12 -storepass:env BUILDER_SIGNING_PASSWORD | sha256sum | cut -d' ' -f1)"
+          bash scripts/sign_builder_release.sh "$direct" /tmp/direct-fixture.apk /tmp/update-check.p12 "$fp"
+          printf '%s\n' '{"tg":"Санҷиш","ru":"Тест","en":"Test","fa":"آزمایش"}' > /tmp/notes.json
+          python3 scripts/builder_update_manifest.py /tmp/direct-fixture.apk --url https://example.invalid/app.apk --certificate "$fp" --notes /tmp/notes.json --previous 1 --aapt "$aapt" --apksigner "$APKSIGNER" > /tmp/updates.json
+          python3 -c 'import json; d=json.load(open("/tmp/updates.json")); assert d["packages"]["tj.builder.app"]["code"]==2'
+          if python3 scripts/builder_update_manifest.py /tmp/direct-fixture.apk --url https://example.invalid/app.apk --certificate "$fp" --notes /tmp/notes.json --previous 2 --aapt "$aapt" --apksigner "$APKSIGNER"; then exit 1; fi
+          rm /tmp/update-check.p12

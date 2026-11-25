@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <application>
+        <provider android:name="tj.builder.v1.UpdateFileProvider" android:authorities="${applicationId}.update" android:exported="false" android:grantUriPermissions="true"/>
+    </application>
+</manifest>

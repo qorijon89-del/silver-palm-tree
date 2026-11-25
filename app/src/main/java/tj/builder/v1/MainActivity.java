@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private Uri source, icon;
   private ProjectBook book;
+  private DistributionUpdate updater;
   private ProjectBook.Item active;
   private ProjectWizard wizard;
   private TextView activeLabel;
@@ -44,6 +45,7 @@ public final class MainActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     book=new ProjectBook(this);
+    updater=new DistributionUpdate(this);
     ScrollView scroll=new ScrollView(this);
     LinearLayout box=new LinearLayout(this);
     box.setOrientation(LinearLayout.VERTICAL);
@@ -60,6 +62,12 @@ public final class MainActivity extends Activity {
     button(box,t("Лоиҳаи нав","Новый проект","New project","پروژه جدید"),()->projectWizard(null));
     button(box,t("Лоиҳаҳои ман","Мои проекты","My projects","پروژه‌های من"),this::selectProject);
     button(box,t("Танзими забон","Язык приложения","App language","زبان برنامه"),()->{if(!busy)BuilderLocale.pick(this,false);});
+    button(box,t("Навсозиро санҷед","Проверить обновление","Check for updates","بررسی به‌روزرسانی"),()->updater.check(true));
+    if(BuildConfig.DIRECT_UPDATE && !BuildConfig.UPDATE_FEED.isEmpty() && android.os.Build.VERSION.SDK_INT>=33 &&
+       checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+      button(box,t("Фаъол кардани огоҳиҳои навсозӣ","Включить уведомления об обновлениях","Enable update notifications","فعال‌کردن اعلان به‌روزرسانی"),()->
+        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},6711));
+    }
     activeLabel=label(box,t("Лоиҳа интихоб нашудааст","Проект не выбран","No project selected","پروژه‌ای انتخاب نشده"));
     label(box,t("HTML ё ZIP-и HTML: сохтани APK дар телефон.","HTML или ZIP HTML: сборка APK на телефоне.","HTML or HTML ZIP: build an APK on the phone.","HTML یا زیپ HTML: ساخت APK در گوشی."));
     button(box,"Интихоби HTML ё ZIP",()->pick(SOURCE,"*/*"));
@@ -111,8 +119,12 @@ public final class MainActivity extends Activity {
       allowInternet.setChecked(state.getBoolean("internet"));
     }
     showSelections();showActive();
+    UpdateJob.schedule(this);
     if(!BuilderLocale.chosen(this))BuilderLocale.pick(this,true);
   }
+  @Override public void onResume(){super.onResume();if(updater!=null)updater.resume();}
+  @Override public void onDestroy(){if(updater!=null)updater.close();super.onDestroy();}
+  void updateStatus(String text){if(status!=null)status.setText(text);}
   String t(String tg,String ru,String en,String fa){return BuilderLocale.t(this,tg,ru,en,fa);}
   private void projectWizard(ProjectBook.Item old){
     if(busy)return;
