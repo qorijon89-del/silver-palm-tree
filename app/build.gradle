@@ -1,2 +1,16 @@
 plugins { id 'com.android.application' version '8.7.3' }
-android { namespace 'tj.builder.test'; compileSdk 35; defaultConfig { applicationId 'tj.builder.test'; minSdk 23; targetSdk 35; versionCode 1; versionName '0.1' } }
+android {
+    namespace 'tj.builder.v1'
+    compileSdk 35
+    defaultConfig { applicationId 'tj.builder.v1'; minSdk 28; targetSdk 35; versionCode 1; versionName '0.1' }
+    sourceSets { main.assets.srcDir layout.buildDirectory.dir('generated/viewerAsset') }
+    packaging.resources.excludes += ['/META-INF/DEPENDENCIES', '/META-INF/LICENSE*', '/META-INF/NOTICE*']
+}
+dependencies { implementation 'com.android.tools.build:apksig:8.7.3' }
+tasks.register('stageViewer', Copy) {
+    dependsOn ':viewer:assembleRelease'
+    from project(':viewer').layout.buildDirectory.file('outputs/apk/release/viewer-release-unsigned.apk')
+    into layout.buildDirectory.dir('generated/viewerAsset')
+    rename { 'viewer.apk' }
+}
+tasks.named('preBuild') { dependsOn 'stageViewer' }

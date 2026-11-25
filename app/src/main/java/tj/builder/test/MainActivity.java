@@ -1,3 +1,0 @@
-package tj.builder.test;
-import android.app.Activity; import android.os.Bundle; import android.widget.*;
-public class MainActivity extends Activity { public void onCreate(Bundle b){ super.onCreate(b); LinearLayout l=new LinearLayout(this); l.setOrientation(1); l.setPadding(24,80,24,24); TextView t=new TextView(this); t.setText("Санҷиши Android Builder"); t.setTextSize(24); l.addView(t); Button x=new Button(this); x.setText("Санҷиш"); l.addView(x); x.setOnClickListener(v->{t.setText("Санҷиш муваффақ шуд"); t.announceForAccessibility(t.getText());}); setContentView(l); }}

@@ -1,2 +1,2 @@
-# AI Android Builder
-Android build project.
+# Android Builder 0.1 preview
+Native Tajik UI to package one local HTML or HTML ZIP into a signed APK. ZIP must contain index.html at its top level. Optional PNG/JPEG launcher image; default provided. Generated app isolates assets and has no Internet permission. A prototype package ID is shared by all outputs. Uninstalling Builder may discard its app-scoped test signing key. Not a release-signing tool. This milestone does not implement the AI, Android ZIP, AAB export or hosted build modes; the separate CI-generated debug AAB refers to the Builder app itself.

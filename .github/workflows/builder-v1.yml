@@ -1,0 +1,44 @@
+name: Android Builder V1 preview
+on:
+  push:
+    branches: [builder-v1-preview]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare SDK
+        run: |
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+            test -n "$SDKMANAGER"
+            "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: gradle --no-daemon :app:assembleDebug :app:bundleDebug
+      - name: Verify Builder and embedded template
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          unzip -p "$apk" assets/viewer.apk > /tmp/viewer-template.apk
+          zipinfo -1 /tmp/viewer-template.apk
+          unzip -p /tmp/viewer-template.apk assets/site/index.html | grep -F 'Барномаи HTML'
+          zipinfo -1 /tmp/viewer-template.apk | grep -E '^res/.+/builder_icon.png$'
+          mkdir -p deliverables
+          cp "$apk" deliverables/Android-Builder-0.1.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-Builder-preview
+          path: deliverables/Android-Builder-0.1.apk
+          if-no-files-found: error
