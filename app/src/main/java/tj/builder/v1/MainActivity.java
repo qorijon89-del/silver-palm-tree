@@ -1,6 +1,7 @@
 package tj.builder.v1;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.Context;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -31,17 +32,19 @@ public final class MainActivity extends Activity {
   private ProjectBook.Item active;
   private ProjectWizard wizard;
   private TextView activeLabel;
+  private LinearLayout htmlPanel,nativePanel;
+  private Button nativeBuild;
   private String sourceName, iconName;
   private TextView selected, iconText, status;
   private ImageView preview;
   private Button build, save;
   private CheckBox allowInternet;
-  private EditText buildServer, buildKey, aiRequest;
-  private final LinkedHashMap<String,CheckBox> nativePerms=new LinkedHashMap<>();
+  private EditText buildServer, buildKey;
   private TextView permissions, nativeFileLabel;
   private Uri nativeFile;
   private String nativeFormat;
   private boolean busy;
+  @Override protected void attachBaseContext(Context base){super.attachBaseContext(BuilderLocale.wrap(base));}
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     book=new ProjectBook(this);
@@ -69,45 +72,35 @@ public final class MainActivity extends Activity {
         requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},6711));
     }
     activeLabel=label(box,t("Лоиҳа интихоб нашудааст","Проект не выбран","No project selected","پروژه‌ای انتخاب نشده"));
-    label(box,t("HTML ё ZIP-и HTML: сохтани APK дар телефон.","HTML или ZIP HTML: сборка APK на телефоне.","HTML or HTML ZIP: build an APK on the phone.","HTML یا زیپ HTML: ساخت APK در گوشی."));
-    button(box,"Интихоби HTML ё ZIP",()->pick(SOURCE,"*/*"));
-    selected=label(box,"Файл интихоб нашудааст");
-    button(box,"Интихоби нишона (ихтиёрӣ)",()->pick(ICON,"image/*"));
-    button(box,"Истифодаи нишонаи пешфарз",()->{icon=null; iconName=null;showSelections();});
-    iconText=label(box,"Нишонаи пешфарз");
-    preview=new ImageView(this); preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-    box.addView(preview,new LinearLayout.LayoutParams(p*4,p*4)); preview.setVisibility(View.GONE);
-    allowInternet=new CheckBox(this);
-    allowInternet.setText("Ба барномаи тайёри HTML интернет иҷозат дода шавад");
-    box.addView(allowInternet);
-    permissions=label(box,"Пешниҳоди иҷозатҳо пас аз интихоби файл");
-    permissions.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-    label(box,"Барои аудио ё дигар муҳтавои онлайн фаъол кунед. Танҳо пайвандҳои HTTPS дастгирӣ мешаванд.");
-    build=button(box,"Сохтани APK",this::startBuild);
-    save=button(box,"Захира кардани APK",this::saveDialog);
     status=label(box,"Омода барои оғоз");
     status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-    button(box,"Санҷиши ZIP-и лоиҳаи Android",()->pick(NATIVE,"*/*"));
-    nativeFileLabel=label(box,"ZIP-и Android интихоб нашудааст");
-    label(box,"Сохтани ZIP-и Android танҳо бо хадамоти хусусии фаъол кор мекунад.");
-    buildServer=field(box,"Суроғаи HTTPS-и хадамот",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
-    buildKey=field(box,"Калиди якдафъаинаи хадамот",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-    label(box,"Илова ба лоиҳаи Android (ихтиёрӣ). Иҷозатҳои мавҷуда боқӣ мемонанд. Иловаи иҷозат худ аз худ вазифаи нав намесозад.");
-    nativeOption(box,"INTERNET","Интернет: муҳтавои онлайн");
-    nativeOption(box,"RECORD_AUDIO","Микрофон: сабти овоз");
-    nativeOption(box,"CAMERA","Камера: акс ё видео");
-    nativeOption(box,"ACCESS_COARSE_LOCATION","Ҷойгиршавии тахминӣ: маҳалли умумӣ");
-    nativeOption(box,"ACCESS_FINE_LOCATION","Ҷойгиршавии дақиқ: харита ё GPS");
-    nativeOption(box,"POST_NOTIFICATIONS","Огоҳинома: ёдрасӣ дар телефон");
-    button(box,"Аз ZIP-и Android сохтани APK",()->startNative("apk"));
-    button(box,"Аз ZIP-и Android сохтани AAB",()->startNative("aab"));
-    button(box,"Захира кардани натиҷаи ZIP-и Android",this::saveNative);
+    permissions=label(box,"Пешниҳоди иҷозатҳо пас аз интихоби файл");
+    permissions.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+    permissions.setVisibility(View.GONE);
 
-    TextView aiHeading=label(box,"Аз рӯйи дархост бо зеҳни сунъӣ");aiHeading.setAccessibilityHeading(true);
-    aiRequest=field(box,"Тавсифи барнома",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-    aiRequest.setSingleLine(false);aiRequest.setMinLines(3);
-    button(box,"Бо AI сохтани лоиҳаи HTML",this::startAi);
-    label(box,"AI барои лоиҳаи HTML аст ва ба хадамоти хусусӣ ниёз дорад. Пеш аз фиристодани матн тасдиқ мепурсад.");
+    htmlPanel=new LinearLayout(this);htmlPanel.setOrientation(1);box.addView(htmlPanel);
+    selected=label(htmlPanel,"Файл интихоб нашудааст");
+    iconText=label(htmlPanel,"Нишонаи пешфарз");
+    preview=new ImageView(this);preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    htmlPanel.addView(preview,new LinearLayout.LayoutParams(p*4,p*4));preview.setVisibility(View.GONE);
+    allowInternet=new CheckBox(this);
+    allowInternet.setText(l("Ба барномаи тайёри HTML интернет иҷозат дода шавад"));
+    htmlPanel.addView(allowInternet);
+    label(htmlPanel,"Барои аудио ё дигар муҳтавои онлайн фаъол кунед. Танҳо пайвандҳои HTTPS дастгирӣ мешаванд.");
+    build=button(htmlPanel,"Сохтани APK",this::startBuild);
+    save=button(htmlPanel,"Захира кардани APK",this::saveDialog);
+
+    nativePanel=new LinearLayout(this);nativePanel.setOrientation(1);box.addView(nativePanel);
+    nativeFileLabel=label(nativePanel,"ZIP-и Android интихоб нашудааст");
+    label(nativePanel,"Сохтани ZIP-и Android танҳо бо хадамоти хусусии фаъол кор мекунад.");
+    LinearLayout service=new LinearLayout(this);service.setOrientation(1);service.setVisibility(View.GONE);
+    button(nativePanel,t("Танзими хадамоти сохтмон","Настройки сервиса сборки","Build service settings","تنظیمات سرویس ساخت"),
+      ()->service.setVisibility(service.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
+    nativePanel.addView(service);
+    buildServer=field(service,"Суроғаи HTTPS-и хадамот",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+    buildKey=field(service,"Калиди якдафъаинаи хадамот",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    nativeBuild=button(nativePanel,"Аз ZIP-и Android сохтани APK",()->startNative(active==null?"apk":active.format));
+    button(nativePanel,"Захира кардани натиҷаи ZIP-и Android",this::saveNative);
 
     setContentView(scroll);
     if(state!=null) {
@@ -124,7 +117,9 @@ public final class MainActivity extends Activity {
   }
   @Override public void onResume(){super.onResume();if(updater!=null)updater.resume();}
   @Override public void onDestroy(){if(updater!=null)updater.close();super.onDestroy();}
-  void updateStatus(String text){if(status!=null)status.setText(text);}
+  void updateStatus(String text){setStatus(text);}
+  private String l(String text){return LocalizedStatus.get(this,text);}
+  private void setStatus(String text){if(status!=null)status.setText(l(text));}
   String t(String tg,String ru,String en,String fa){return BuilderLocale.t(this,tg,ru,en,fa);}
   private void projectWizard(ProjectBook.Item old){
     if(busy)return;
@@ -134,22 +129,37 @@ public final class MainActivity extends Activity {
   private void selectProject(){
     if(busy)return;
     List<ProjectBook.Item> projects=book.all();
-    if(projects.isEmpty()){status.setText(t("Ҳоло лоиҳа нест","Проектов пока нет","No projects yet","هنوز پروژه‌ای وجود ندارد"));return;}
+    if(projects.isEmpty()){setStatus(t("Ҳоло лоиҳа нест","Проектов пока нет","No projects yet","هنوز پروژه‌ای وجود ندارد"));return;}
     String[] names=new String[projects.size()];
     for(int n=0;n<names.length;n++){ProjectBook.Item i=projects.get(n);names[n]=i.title+" · "+i.id;}
     new android.app.AlertDialog.Builder(this).setTitle(t("Лоиҳаҳои ман","Мои проекты","My projects","پروژه‌های من"))
         .setItems(names,(d,n)->projectWizard(projects.get(n))).show();
   }
   void useProject(ProjectBook.Item p){
-    active=p;source=null;sourceName=null;nativeFile=null;
+    active=p;source=null;sourceName=null;nativeFile=null;nativeFormat=null;
+    nativeFileLabel.setText(l("ZIP-и Android интихоб нашудааст"));
+    permissions.setText(l("Пешниҳоди иҷозатҳо пас аз интихоби файл"));
+    setStatus("Омода барои оғоз");
     icon=p.icon.isEmpty()?null:Uri.parse(p.icon);iconName=icon==null?null:filename(icon);
     allowInternet.setChecked(p.permissions.contains("INTERNET"));
-    for(Map.Entry<String,CheckBox> x:nativePerms.entrySet())x.getValue().setChecked(p.permissions.contains(x.getKey()));
+
     showSelections();showActive();
     pick(p.kind.equals("html")?SOURCE:NATIVE,"*/*");
   }
   private void showActive(){
-    if(active!=null)activeLabel.setText(active.title+" · "+active.id+" · "+active.version);
+    boolean html=active!=null&&active.kind.equals("html");
+    boolean nativeMode=active!=null&&active.kind.equals("android");
+    htmlPanel.setVisibility(html?View.VISIBLE:View.GONE);
+    nativePanel.setVisibility(nativeMode?View.VISIBLE:View.GONE);
+    permissions.setVisibility(active!=null?View.VISIBLE:View.GONE);
+    if(active!=null){
+      activeLabel.setText(active.title+" · "+active.id+" · "+active.version);
+      if(html){
+        build.setVisibility(active.format.equals("apk")?View.VISIBLE:View.GONE);
+        if(active.format.equals("aab"))setStatus(t("AAB барои HTML ҳанӯз дастрас нест.","AAB из HTML пока недоступен.","HTML to AAB is not available yet.","تبدیل HTML به AAB هنوز در دسترس نیست."));
+      }
+      if(nativeMode)nativeBuild.setText(l(active.format.equals("aab")?"Аз ZIP-и Android сохтани AAB":"Аз ZIP-и Android сохтани APK"));
+    }
   }
   @Override protected void onSaveInstanceState(Bundle b) {
     super.onSaveInstanceState(b);
@@ -159,19 +169,16 @@ public final class MainActivity extends Activity {
     b.putBoolean("internet",allowInternet.isChecked());
     b.putString("sourceName",sourceName);b.putString("iconName",iconName);
   }
-  private void nativeOption(LinearLayout box,String code,String text){
-    CheckBox option=new CheckBox(this);option.setText(text);box.addView(option);nativePerms.put(code,option);
-  }
   private EditText field(LinearLayout box,String title,int inputType) {
     TextView l=label(box,title); EditText e=new EditText(this); e.setId(View.generateViewId()); l.setLabelFor(e.getId());
     e.setSingleLine(true);e.setInputType(inputType);e.setSaveEnabled(false);box.addView(e);return e;
   }
   private TextView label(LinearLayout box,String text) {
-    TextView item=new TextView(this);item.setText(text);item.setTextSize(17);
+    TextView item=new TextView(this);item.setText(l(text));item.setTextSize(17);
     item.setPadding(0,10,0,10);box.addView(item);return item;
   }
   private Button button(LinearLayout box,String text,Runnable click) {
-    Button b=new Button(this);b.setAllCaps(false);b.setText(text);b.setMinHeight((int)(52*getResources().getDisplayMetrics().density));
+    Button b=new Button(this);b.setAllCaps(false);b.setText(l(text));b.setMinHeight((int)(52*getResources().getDisplayMetrics().density));
     b.setOnClickListener(v->click.run());box.addView(b);return b;
   }
   private void pick(int id,String mime) {
@@ -181,8 +188,8 @@ public final class MainActivity extends Activity {
   }
   private File output() {return new File(getFilesDir(),active==null?"HTML-result.apk":active.id+".apk");}
   private void showSelections() {
-    selected.setText(sourceName==null?"Файл интихоб нашудааст":"Файл: "+sourceName);
-    iconText.setText(iconName==null?"Нишонаи пешфарз":"Нишона: "+iconName);
+    selected.setText(l(sourceName==null?"Файл интихоб нашудааст":"Файл: "+sourceName));
+    iconText.setText(l(iconName==null?"Нишонаи пешфарз":"Нишона: "+iconName));
     preview.setVisibility(View.GONE);
     if(icon!=null){final Uri chosen=icon;worker.execute(()->{
       try{Bitmap bmp=decodeIcon(chosen);runOnUiThread(()->{if(chosen.equals(icon)){preview.setImageBitmap(bmp);preview.setVisibility(View.VISIBLE);}});}
@@ -202,7 +209,7 @@ public final class MainActivity extends Activity {
     Uri u=data.getData();
     if(request==SAVE||request==14){
       final File selectedOutput=request==SAVE?output():new File(getFilesDir(),"native-"+nativeFormat);
-      busy=true;showSelections();status.setText("Файл захира шуда истодааст");
+      busy=true;showSelections();setStatus("Файл захира шуда истодааст");
       worker.execute(()->{
         String resultText;
         try(InputStream in=new FileInputStream(selectedOutput); OutputStream out=getContentResolver().openOutputStream(u,"w")){
@@ -222,8 +229,8 @@ public final class MainActivity extends Activity {
   }
   private void inspectNative(Uri file) {
     if(busy)return;
-    nativeFile=null;nativeFileLabel.setText("ZIP-и Android санҷида мешавад");
-    busy=true;showSelections();status.setText("ZIP-и Android санҷида мешавад");
+    nativeFile=null;nativeFileLabel.setText(l("ZIP-и Android санҷида мешавад"));
+    busy=true;showSelections();setStatus("ZIP-и Android санҷида мешавад");
     worker.execute(()->{
       String result;
       try(ZipInputStream z=new ZipInputStream(open(file))) {
@@ -245,10 +252,10 @@ public final class MainActivity extends Activity {
           if(entries.contains(base+"app/src/main/AndroidManifest.xml")&&(entries.contains(base+"app/build.gradle")||entries.contains(base+"app/build.gradle.kts"))){projects++;manifestPath=base+"app/src/main/AndroidManifest.xml";}
         }
         if(projects==1){
-          final String review=ProjectReview.nativeReview(readZipText(file,manifestPath));
+          final String review=ProjectReview.nativeReview(this,readZipText(file,manifestPath));
           runOnUiThread(()->{nativeFile=file;nativeFileLabel.setText("ZIP: "+filename(file));permissions.setText(review);});
           result="ZIP-и лоиҳаи Android дуруст шинохта шуд.";
-        } else { runOnUiThread(()->{nativeFile=null;nativeFileLabel.setText("ZIP-и Android интихоб нашудааст");});
+        } else { runOnUiThread(()->{nativeFile=null;nativeFileLabel.setText(l("ZIP-и Android интихоб нашудааст"));});
           result="Ин ZIP ҳамчун як лоиҳаи Android бо бахши app шинохта нашуд.";}
 
       }catch(Exception e) {result=e instanceof UserError?e.getMessage():"ZIP хонда нашуд.";}
@@ -271,7 +278,7 @@ public final class MainActivity extends Activity {
     return data.toByteArray();
   }
   private void reviewHtml(Uri file,String name) {
-    permissions.setText("Дархостҳои иҷозат санҷида мешаванд");
+    permissions.setText(l("Дархостҳои иҷозат санҷида мешаванд"));
     worker.execute(()->{
       String report;
       try{
@@ -294,13 +301,13 @@ public final class MainActivity extends Activity {
             }
           }finally{f.delete();}
         }else try(InputStream in=open(file)){p=readPrefix(in,256*1024);}
-        report=ProjectReview.html(p);
+        report=ProjectReview.html(this,p);
       }catch(Exception e){report="Пешниҳоди иҷозатҳо дастрас нашуд.";}
-      final String msg=report;runOnUiThread(()->{if(file.equals(source))permissions.setText(msg);});
+      final String msg=report;runOnUiThread(()->{if(file.equals(source))permissions.setText(l(msg));});
     });
   }
   private void saveNative(){
-    if(busy||nativeFormat==null){status.setText("Ҳанӯз APK ё AAB-и Android тайёр нест.");return;}
+    if(busy||nativeFormat==null){setStatus("Ҳанӯз APK ё AAB-и Android тайёр нест.");return;}
     Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
       .setType(nativeFormat.equals("apk")?"application/vnd.android.package-archive":"application/octet-stream")
       .putExtra(Intent.EXTRA_TITLE,"Android-Test."+nativeFormat);
@@ -308,59 +315,31 @@ public final class MainActivity extends Activity {
   }
   private void startNative(String fmt){
     if(busy)return;
-    if(nativeFile==null){status.setText("Аввал ZIP-и лоиҳаи Android-ро интихоб кунед.");return;}
+    if(nativeFile==null){setStatus("Аввал ZIP-и лоиҳаи Android-ро интихоб кунед.");return;}
     final BuildConnection con;
     try{con=new BuildConnection(buildServer.getText().toString(),buildKey.getText().toString());}
-    catch(Exception e){status.setText("Хадамоти хусусӣ пайваст нест. ZIP фиристода нашуд.");return;}
+    catch(Exception e){setStatus("Хадамоти хусусӣ пайваст нест. ZIP фиристода нашуд.");return;}
     final Uri captured=nativeFile;
     ArrayList<String> p=new ArrayList<>();
-    for(Map.Entry<String,CheckBox> option:nativePerms.entrySet())if(option.getValue().isChecked())p.add(option.getKey());
+    if(active!=null)p.addAll(active.permissions);
     if(p.contains("ACCESS_FINE_LOCATION")&&!p.contains("ACCESS_COARSE_LOCATION"))p.add("ACCESS_COARSE_LOCATION");
     final String allowed=String.join(",",p);
-    new android.app.AlertDialog.Builder(this).setTitle("Фиристодани ZIP ба хадамоти хусусӣ")
-      .setMessage("Ҳамаи файлҳои ZIP ба суроғаи интихобшуда фиристода мешаванд. Танҳо лоиҳаи боэътимодро фиристед.")
-      .setNegativeButton("Бекор",null).setPositiveButton("Фиристодан",(dialog,w)->{
+    new android.app.AlertDialog.Builder(this).setTitle(l("Фиристодани ZIP ба хадамоти хусусӣ"))
+      .setMessage(l("Ҳамаи файлҳои ZIP ба суроғаи интихобшуда фиристода мешаванд. Танҳо лоиҳаи боэътимодро фиристед."))
+      .setNegativeButton(l("Бекор"),null).setPositiveButton(l("Фиристодан"),(dialog,w)->{
         busy=true;nativeFormat=null;showSelections();
         worker.execute(()->{
           File in=null,out=null;String msg;
           try{
             in=File.createTempFile("upload",".zip",getCacheDir());out=File.createTempFile("native",".part",getFilesDir());
             try(InputStream s=open(captured);OutputStream d=new FileOutputStream(in)){pipe(s,d,100L*1024*1024);}
-            con.build(in,out,fmt,allowed,n->runOnUiThread(()->status.setText(n)));
+            con.build(in,out,fmt,allowed,n->runOnUiThread(()->setStatus(n)));
             android.system.Os.rename(out.getAbsolutePath(),new File(getFilesDir(),"native-"+fmt).getAbsolutePath());
             runOnUiThread(()->nativeFormat=fmt);
             msg="Файл тайёр шуд. «Захира кардани натиҷаи ZIP-и Android»-ро пахш кунед.";
           }catch(Exception e){msg="Сохтани натиҷа муваффақ нашуд. Пайвастшавӣ ё лоиҳаро санҷед.";}
           finally{if(in!=null)in.delete();if(out!=null)out.delete();}
           finishWork(msg);
-        });
-      }).show();
-  }
-  private void startAi(){
-    if(busy)return;
-    final String prompt=aiRequest.getText().toString().trim();
-    if(prompt.length()<5||prompt.length()>2400){status.setText("Тавсифи барномаро аз 5 то 2400 аломат нависед.");return;}
-    final BuildConnection con;
-    try{con=new BuildConnection(buildServer.getText().toString(),buildKey.getText().toString());}
-    catch(Exception e){status.setText("Хадамоти AI пайваст нест. Матн фиристода нашуд.");return;}
-    new android.app.AlertDialog.Builder(this).setTitle("Фиристодани матн ба AI")
-      .setMessage("Тавсиф ба хадамоти хусусӣ ва ба OpenAI фиристода мешавад. Маълумоти шахсӣ нанависед.")
-      .setNegativeButton("Бекор",null).setPositiveButton("Фиристодан",(dlg,which)->{
-        busy=true;showSelections();status.setText("AI лоиҳаи HTML омода мекунад");
-        worker.execute(()->{
-          String report;
-          try{
-            byte[] html=con.generate(prompt);
-            if(html.length<4||html.length>220000)throw new IOException();
-            File generated=new File(getFilesDir(),"AI-project.html");
-            try(OutputStream stream=new FileOutputStream(generated)){stream.write(html);}
-            Uri made=Uri.fromFile(generated);
-            runOnUiThread(()->{source=made;sourceName="AI-project.html";allowInternet.setChecked(false);permissions.setText(ProjectReview.html(html));});
-            report="Лоиҳаи HTML тайёр аст. Пешниҳоди иҷозатҳоро бинед ва барои санҷиш «Сохтани APK»-ро пахш кунед.";
-          }catch(Exception e){
-            report="ai_not_configured".equals(e.getMessage())?"AI дар сервер фаъол нест.":"AI лоиҳаро тайёр карда натавонист.";
-          }
-          finishWork(report);
         });
       }).show();
   }
@@ -374,13 +353,13 @@ public final class MainActivity extends Activity {
     if(source==null||busy)return;
     final ProjectBook.Item p=active;
     if(p==null||!p.kind.equals("html")){
-      status.setText(t("Аввал лоиҳаи HTML созед ё кушоед.","Сначала откройте или создайте проект HTML.","Create or open an HTML project first.","ابتدا یک پروژه HTML بسازید یا باز کنید."));return;
+      setStatus(t("Аввал лоиҳаи HTML созед ё кушоед.","Сначала откройте или создайте проект HTML.","Create or open an HTML project first.","ابتدا یک پروژه HTML بسازید یا باز کنید."));return;
     }
     if(p.format.equals("aab")){
-      status.setText(t("AAB барои HTML ҳанӯз дастрас нест.","AAB из HTML пока недоступен.","HTML to AAB is not available yet.","تبدیل HTML به AAB هنوز در دسترس نیست."));return;
+      setStatus(t("AAB барои HTML ҳанӯз дастрас нест.","AAB из HTML пока недоступен.","HTML to AAB is not available yet.","تبدیل HTML به AAB هنوز در دسترس نیست."));return;
     }
     final Uri file=source, image=icon; final String name=sourceName; final boolean internet=allowInternet.isChecked();
-    busy=true;showSelections();status.setText("APK сохта истодааст");
+    busy=true;showSelections();setStatus("APK сохта истодааст");
     worker.execute(()->{
       String message;
       try {
@@ -395,7 +374,7 @@ public final class MainActivity extends Activity {
       finishWork(message);
     });
   }
-  private void finishWork(String msg){runOnUiThread(()->{if(!isDestroyed()){busy=false;showSelections();status.setText(msg);}});}
+  private void finishWork(String msg){runOnUiThread(()->{if(!isDestroyed()){busy=false;showSelections();setStatus(msg);}});}
   private static final class UserError extends IOException { UserError(String msg){super(msg);} }
   private InputStream open(Uri file)throws IOException {
     InputStream in=getContentResolver().openInputStream(file);

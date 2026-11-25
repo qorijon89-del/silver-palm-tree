@@ -4,6 +4,10 @@ import android.graphics.Typeface;
 import android.net.Uri;
 import android.text.InputType;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.widget.*;
 import java.util.*;
 
@@ -12,7 +16,7 @@ final class ProjectWizard {
   private final ProjectBook book;
   private final ProjectBook.Item old;
   private final Runnable pick;
-  private final AlertDialog dialog;
+  private final Dialog dialog;
   private final LinearLayout form, nav;
   private int step;
   private String title="",id="",version="1.0",format="apk",kind="html",icon="",iconName="";
@@ -25,27 +29,40 @@ final class ProjectWizard {
   private final LinkedHashMap<String,CheckBox> permFields=new LinkedHashMap<>();
   ProjectWizard(MainActivity a,ProjectBook book,ProjectBook.Item old,Runnable pick){
     this.a=a;this.book=book;this.old=old;this.pick=pick;
-    if(old!=null){title=old.title;id=old.id;version=old.auto?old.version:old.version;kind=old.kind;format=old.format;icon=old.icon;auto=old.auto;perms.addAll(old.permissions);}
+    if(old!=null){title=old.title;id=old.id;version=old.version;kind=old.kind;format=old.format;icon=old.icon;auto=old.auto;perms.addAll(old.permissions);}
     LinearLayout outer=new LinearLayout(a);outer.setOrientation(1);
     int p=(int)(16*a.getResources().getDisplayMetrics().density);outer.setPadding(p,p,p,p);
     ScrollView s=new ScrollView(a);form=new LinearLayout(a);form.setOrientation(1);
     s.addView(form);outer.addView(s,new LinearLayout.LayoutParams(-1,0,1));
     nav=new LinearLayout(a);nav.setOrientation(0);outer.addView(nav);
     BuilderLocale.apply(a,outer);
-    dialog=new AlertDialog.Builder(a).setView(outer).create();
+    dialog=new Dialog(a);
+    dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+    dialog.setContentView(outer);
   }
   String t(String tg,String ru,String en,String fa){return BuilderLocale.t(a,tg,ru,en,fa);}
-  void show(){dialog.show();dialog.getWindow().setLayout(-1,-1);render();}
+  void show(){
+    // Create EditTexts before opening the window so Android marks it IME-capable.
+    render();
+    dialog.show();
+    Window window=dialog.getWindow();
+    if(window!=null){
+      window.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM|WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+      window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+      window.setLayout(-1,-1);
+    }
+  }
   void setIcon(Uri i,String name){icon=i.toString();iconName=name;if(step==2)render();}
   private void render(){
     form.removeAllViews();nav.removeAllViews();permFields.clear();
+    form.setFocusableInTouchMode(true);
     TextView h=label(t("Қадам ","Шаг ","Step ","مرحله ")+(step+1)+" / 4");h.setTypeface(null,Typeface.BOLD);h.setAccessibilityHeading(true);
     switch(step){
       case 0:
-        titleInput=field(t("Номи барнома","Название","App name","نام برنامه"),title,false);
-        idInput=field(t("Номи баста","Идентификатор","Package name","نام بسته"),id,true);
+        titleInput=field(t("Номи барнома","Название","App name","نام برنامه"),title,false,R.id.project_name);
+        idInput=field(t("Номи баста","Идентификатор","Package name","نام بسته"),id,true,R.id.project_package);
         idInput.setHint("com.example.pogoda");idInput.setEnabled(old==null);
-        versionInput=field(t("Рақами версия","Версия","Version name","شماره نسخه"),version,true);
+        versionInput=field(t("Рақами версия","Версия","Version name","شماره نسخه"),version,true,R.id.project_version);
         autoInput=check(t("Версия худкор боло равад","Повышать версию автоматически","Increase version automatically","افزایش خودکار نسخه"),auto);
         if(old!=null){versionInput.setEnabled(!auto);autoInput.setOnCheckedChangeListener((b,on)->versionInput.setEnabled(!on));}
         kindInput=spin(t("Навъи файл","Тип файла","Input type","نوع فایل"),new String[]{"HTML / HTML ZIP",t("ZIP-и Android","ZIP Android","Android ZIP","زیپ اندروید")},kind.equals("html")?0:1);
@@ -73,6 +90,7 @@ final class ProjectWizard {
         formatInput=spin(t("Формати натиҷа","Формат файла","Output format","قالب خروجی"),new String[]{"APK","AAB"},format.equals("aab")?1:0);
         label(t("Баъд аз «Тайёр» файлро интихоб мекунед.","После «Готово» выберите файл.","After Finish, choose your input file.","پس از «انجام شد»، فایل را انتخاب کنید."));
     }
+    form.requestFocus();
     button(nav,step==0?t("Бекор","Отмена","Cancel","لغو"):t("Бозгашт","Назад","Back","بازگشت"),()->{
       if(step==0)dialog.dismiss();else {capture();step--;render();}
     });
@@ -107,10 +125,20 @@ final class ProjectWizard {
   private TextView label(String t){
     TextView v=new TextView(a);v.setText(t);v.setTextSize(18);v.setPadding(0,10,0,10);form.addView(v);return v;
   }
-  private EditText field(String text,String value,boolean ascii){
-    TextView l=label(text);EditText e=new EditText(a);e.setId(View.generateViewId());l.setLabelFor(e.getId());
+  private EditText field(String text,String value,boolean ascii,int id){
+    TextView l=label(text);EditText e=new EditText(a);e.setId(id);l.setLabelFor(e.getId());
     if(ascii){e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);e.setTextDirection(View.TEXT_DIRECTION_LTR);}
-    e.setSingleLine(true);e.setText(value);form.addView(e);return e;
+    e.setSingleLine(true);e.setText(value);
+    e.setFocusable(true);e.setFocusableInTouchMode(true);e.setShowSoftInputOnFocus(true);
+    e.setOnClickListener(v->{
+      if(!e.isEnabled())return;
+      e.requestFocus();
+      e.post(()->{
+        InputMethodManager im=(InputMethodManager)a.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if(e.hasWindowFocus()&&im!=null)im.showSoftInput(e,InputMethodManager.SHOW_IMPLICIT);
+      });
+    });
+    form.addView(e);return e;
   }
   private CheckBox check(String title,boolean value){CheckBox c=new CheckBox(a);c.setText(title);c.setChecked(value);form.addView(c);return c;}
   private void option(String key,String title){permFields.put(key,check(title,perms.contains(key)));}

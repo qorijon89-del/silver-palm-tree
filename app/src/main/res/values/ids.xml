@@ -1,0 +1,5 @@
+<resources>
+  <item name="project_name" type="id"/>
+  <item name="project_package" type="id"/>
+  <item name="project_version" type="id"/>
+</resources>
