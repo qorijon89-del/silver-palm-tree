@@ -1,6 +1,9 @@
 plugins { id 'com.android.application' version '8.10.1' }
 android {
     namespace 'tj.builder.v1'
+    buildTypes {
+        debug { applicationIdSuffix '.personal'; versionNameSuffix '-personal' }
+    }
     compileSdk 36
     defaultConfig { applicationId 'tj.builder.app'; minSdk 28; targetSdk 36; versionCode 1; versionName '1.0' }
     sourceSets { main.assets.srcDir layout.buildDirectory.dir('generated/viewerAsset') }
